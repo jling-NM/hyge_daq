@@ -8,7 +8,7 @@ from matplotlib.figure import Figure
 import numpy as np
 from enum import Enum
 from matplotlib.widgets import SpanSelector
-
+#import matplotlib.markers
 
 
 class PlotClearDepth(Enum):
@@ -74,14 +74,22 @@ class PlotArea(QtWidgets.QVBoxLayout):
         # init plot history
         self.reset_history()
 
-
+        # store any annotations for easier clearing
+        self.annotation_list = []
+        
+        # keep track of this for entire plot area
+        self.display_annotations = False
             
             
-    def plot(self, experiment, plot_filter_data):
+    def plot(self, experiment, plot_filter_data, plot_annotate):
         """
         Plot experiment radian data
         """
 
+        # update this setting
+        self.display_annotations = plot_annotate
+        
+        
         # see if we have a baseline shift and remove
         baselineShift = np.median(experiment.voltage_data[0:int(experiment.readRate)]) 
         if np.abs(baselineShift) < 1.0:
@@ -122,16 +130,17 @@ class PlotArea(QtWidgets.QVBoxLayout):
 
             
         # following selection of plotting data, resampling center plots on peaks in data to be displayed
+        shift_plot_pos = 0
         if self.underlay_peak_index == 0:
             self.underlay_peak_index = np.argmax(plot_data)
         else:
-            shift_pos = np.argmax(plot_data) - self.underlay_peak_index
-            if shift_pos < 0:
+            shift_plot_pos = np.argmax(plot_data) - self.underlay_peak_index
+            if shift_plot_pos < 0:
                 # zeropad front, clip from end
-                plot_data = np.concatenate((np.zeros(np.abs(shift_pos)), plot_data[0:shift_pos]))
+                plot_data = np.concatenate((np.zeros(np.abs(shift_plot_pos)), plot_data[0:shift_plot_pos]))
             else:
                 # cut from front, zeropad end
-                plot_data = np.concatenate((plot_data[shift_pos:], np.zeros(np.abs(shift_pos))))            
+                plot_data = np.concatenate((plot_data[shift_plot_pos:], np.zeros(np.abs(shift_plot_pos))))            
         
         
         
@@ -145,6 +154,62 @@ class PlotArea(QtWidgets.QVBoxLayout):
         # line plot of data
         self.axes.plot(plot_data, label=experiment.get_label())
         
+        
+        
+        # shall we add annotations?
+        if self.display_annotations:
+            
+            peak_indx = (summary_data['peak_ind']+(-shift_plot_pos))
+            rise_start_indx = (summary_data['rise_start_index']+(-shift_plot_pos))
+            rise_end_indx = (summary_data['rise_end_index']+(-shift_plot_pos))
+            
+            #marker=matplotlib.markers.CARETUP, 
+            self.axes.plot(
+                    [rise_start_indx, peak_indx, rise_end_indx], 
+                    [plot_data[rise_start_indx], plot_data[peak_indx], plot_data[rise_end_indx]], 
+                    's', 
+                    marker='.',
+                    markersize='5',
+                    color="red")
+            #self.axes.scatter([summary_data['rise_start_index'], summary_data['rise_end_index']], [plot_data[summary_data['rise_start_index']], plot_data[summary_data['rise_end_index']]])
+    
+            self.annotation_list.append(self.axes.annotate(
+                    'peak', 
+                    xy=(peak_indx, plot_data[peak_indx]),
+                    size=10,
+                    xycoords='data', 
+                    xytext=(-50,10), 
+                    textcoords='offset points', 
+                    arrowprops=dict(arrowstyle="->", connectionstyle="angle, angleA=0, angleB=90, rad=10")
+                )
+            )
+            
+            self.annotation_list.append(self.axes.annotate(
+                'rise start', 
+                xy=(rise_start_indx, plot_data[rise_start_indx]), 
+                size=10,
+                xycoords='data', 
+                xytext=(-50,30), 
+                textcoords='offset points', 
+                arrowprops=dict(arrowstyle="->")
+                )
+            )
+            
+            self.annotation_list.append(self.axes.annotate(
+                'rise end', 
+                xy=(rise_end_indx, plot_data[rise_end_indx]), 
+                size=10,
+                xycoords='data', 
+                xytext=(10,30), 
+                textcoords='offset points', 
+                arrowprops=dict(arrowstyle="->")
+                )
+            )
+              
+        
+        
+        
+        
         # update previous titles
         self.axes.set_title(experiment.get_label())
         if len(self.axes.lines) > 1:
@@ -156,15 +221,18 @@ class PlotArea(QtWidgets.QVBoxLayout):
 
 
         # positive_phase_area indicator
-        self.positive_phase_area = self.axes.fill_between(np.arange(summary_data['rise_start_index'],
-                                                          summary_data['rise_end_index']), 0,
-                                                          plot_data[summary_data['rise_start_index']:summary_data['rise_end_index']],
-                                                          facecolor='beige', alpha=0.50)
+        # only show on single plot without annotations
+        if len(self.axes.lines) == 1:
+            self.positive_phase_area = self.axes.fill_between(np.arange(summary_data['rise_start_index'],
+                                                              summary_data['rise_end_index']), 0,
+                                                              plot_data[summary_data['rise_start_index']:summary_data['rise_end_index']],
+                                                              facecolor='beige', alpha=0.50)
 
         # refresh canvas so plot is updated
         self.canvas.draw()
 
         del filtered_radian_data, radian_data
+
 
     def on_select_xspan(self, xmin, xmax):
         """
@@ -183,21 +251,25 @@ class PlotArea(QtWidgets.QVBoxLayout):
 
     def clear_plot(self, clear_depth=0):
         """ clear the plot """
-
+        
         # remove plot lines
         if clear_depth == PlotClearDepth.ALL:
             # remove all plots
             del self.axes.lines[:]
-
             # reset history when removing all lines
             self.reset_history()
             
         elif clear_depth == PlotClearDepth.TOP:
-            # remove last plot if multiple
-            if len(self.axes.lines) > 1:
-                del self.axes.lines[-1]            
-          
-            
+            # remove last plot if multiple      
+            if self.display_annotations:
+                if (len(self.axes.lines) > 3):
+                    del self.axes.lines[2:] # [2:] to remove line but leave markers, [1:] to remove line and markers
+            else:
+                if (len(self.axes.lines) > 1):
+                    del self.axes.lines[-1]
+
+
+                    
         # remove title
         self.axes.set_title("")          
             
@@ -221,6 +293,12 @@ class PlotArea(QtWidgets.QVBoxLayout):
             self.axes.leg.remove()
             self.axes.leg = None  
             
+        # remove annotations
+        for ann in self.annotation_list:
+            ann.remove()
+        self.annotation_list = []
+                
+                
             # refresh canvas
         self.canvas.draw()
 
@@ -350,6 +428,7 @@ class PlotArea(QtWidgets.QVBoxLayout):
                 'maxPistonTravelDistanceInches': excursionTravelDistanceInches }
 
         return summary_data
+
 
 
     def draw_summary_box(self, experiment, summary):
