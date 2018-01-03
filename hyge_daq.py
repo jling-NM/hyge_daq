@@ -126,6 +126,28 @@ class GUI(QtWidgets.QMainWindow):
         self.plotFilterMenu.triggered.connect(self.plotFilterMenu_changed)
 
         
+        
+        # plot filter submenu
+        self.plotAnnotationMenu = optMenu.addMenu('Annotate Plot:')
+        
+        # group so options are exclusive
+        ag = QtWidgets.QActionGroup(self.plotAnnotationMenu, exclusive=True)
+        # add menu items
+        a = ag.addAction(QtWidgets.QAction('Yes', self.plotAnnotationMenu, checkable=True))
+        a.setData(True)
+        if self.plot_annotate:
+            a.setChecked(True)
+        self.plotAnnotationMenu.addAction(a)
+        
+        a = ag.addAction(QtWidgets.QAction('No', self.plotAnnotationMenu, checkable=True))
+        a.setData(False)
+        if not self.plot_annotate:
+            a.setChecked(True)
+        self.plotAnnotationMenu.addAction(a)
+        self.plotAnnotationMenu.triggered.connect(self.plotAnnotationMenu_changed)
+
+
+        
         # create status bar
         self.statusBar()
 
@@ -337,7 +359,15 @@ class GUI(QtWidgets.QMainWindow):
             if action.isChecked():
                 self.plot_filter_data = action.data()
 
-
+    def plotAnnotationMenu_changed(self): 
+        """ 
+        Connect to Option menu for sensor
+        """ 
+        for action in self.plotAnnotationMenu.actions():
+            if action.isChecked():
+                self.plot_annotate = action.data()
+                
+                
     def wait_trigger_collection(self):
         """ 
         init wait for data            
@@ -437,7 +467,7 @@ class GUI(QtWidgets.QMainWindow):
                 self.save_trace()
                                 
                 # plot
-                self.plot_area.plot(self.experiment, self.plot_filter_data)
+                self.plot_area.plot(self.experiment, self.plot_filter_data, self.plot_annotate)
                 
                 del sensor_data_raw
                 
@@ -481,7 +511,7 @@ class GUI(QtWidgets.QMainWindow):
                     self.plot_area.clear_plot(self.plot_clear_level)
                 
                     # plot data
-                    self.plot_area.plot(self.experiment, self.plot_filter_data)
+                    self.plot_area.plot(self.experiment, self.plot_filter_data, self.plot_annotate)
                     self.statusBar().showMessage('Ready')
 
                 else:
@@ -519,6 +549,8 @@ class GUI(QtWidgets.QMainWindow):
         self.plot_clear_level = self.settings.value('plot_clear_level', PlotClearDepth.TOP)
         # default plot filter
         self.plot_filter_data = self.settings.value('plot_filter_data', False, type=bool)
+        # default plot annotation
+        self.plot_annotate = self.settings.value('plot_annotate', False, type=bool)
         
         # change to script directory
         script_home = os.path.dirname(os.path.abspath(__file__))
@@ -532,7 +564,8 @@ class GUI(QtWidgets.QMainWindow):
         save app session settings
         """
         # update settings
-        self.settings.setValue('plot_filter_data', self.plot_filter_data)        
+        self.settings.setValue('plot_filter_data', self.plot_filter_data)
+        self.settings.setValue('plot_annotate', self.plot_annotate)
         self.settings.setValue('plot_clear_level', self.plot_clear_level)
         self.settings.setValue('sensor_channel1_id', self.sensor_channel1_id)
         self.settings.setValue('sensor_channel2_id', self.sensor_channel2_id)
